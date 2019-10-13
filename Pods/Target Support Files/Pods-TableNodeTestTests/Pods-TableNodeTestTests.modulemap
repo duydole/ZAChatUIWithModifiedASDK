@@ -1,0 +1,6 @@
+framework module Pods_TableNodeTestTests {
+  umbrella header "Pods-TableNodeTestTests-umbrella.h"
+
+  export *
+  module * { export * }
+}
