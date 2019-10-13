@@ -21,8 +21,10 @@
 #import <AsyncDisplayKit/ASTwoDimensionalArrayUtils.h>
 #import <AsyncDisplayKit/ASWeakSet.h>
 
+#import <AsyncDisplayKit/ASLayout.h>
 #import <AsyncDisplayKit/ASDisplayNode+FrameworkPrivate.h>
 #import <AsyncDisplayKit/AsyncDisplayKit+Debug.h>
+#import <AsyncDisplayKit/ASDispatch.h>
 
 #define AS_RANGECONTROLLER_LOG_UPDATE_FREQ 0
 
@@ -42,6 +44,7 @@
   BOOL _didRegisterForNodeDisplayNotifications;
   CFTimeInterval _pendingDisplayNodesTimestamp;
 
+  dispatch_queue_t queue;
   // If the user is not currently scrolling, we will keep our ranges
   // configured to match their previous scroll direction. Defaults
   // to [.right, .down] so that when the user first opens a screen
@@ -68,6 +71,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
     return nil;
   }
   
+  queue = dispatch_queue_create("rangeController.concurrentQueue", DISPATCH_QUEUE_CONCURRENT);
   _rangeIsValid = YES;
   _currentRangeMode = ASLayoutRangeModeUnspecified;
   _contentHasBeenScrolled = NO;
@@ -274,9 +278,15 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 
   NSHashTable<ASCollectionElement *> *displayElements = nil;
   NSHashTable<ASCollectionElement *> *preloadElements = nil;
+  NSHashTable<ASCollectionElement *> *maintainElements = nil;
   
   if (optimizedLoadingOfBothRanges) {
-    [_layoutController allElementsForScrolling:scrollDirection rangeMode:rangeMode displaySet:&displayElements preloadSet:&preloadElements map:map];
+      [_layoutController allElementsForScrolling:scrollDirection
+                                       rangeMode:rangeMode
+                                      displaySet:&displayElements
+                                      preloadSet:&preloadElements
+                                     maintainSet:&maintainElements
+                                             map:map];
   } else {
     if (emptyDisplayRange == YES) {
       displayElements = [NSHashTable hashTableWithOptions:NSHashTableObjectPointerPersonality];
@@ -301,6 +311,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   NSSet<NSIndexPath *> *visibleIndexPaths = ASSetByFlatMapping(visibleElements, ASCollectionElement *element, [map indexPathForElementIfCell:element]);
   NSSet<NSIndexPath *> *displayIndexPaths = ASSetByFlatMapping(displayElements, ASCollectionElement *element, [map indexPathForElementIfCell:element]);
   NSSet<NSIndexPath *> *preloadIndexPaths = ASSetByFlatMapping(preloadElements, ASCollectionElement *element, [map indexPathForElementIfCell:element]);
+  NSSet<NSIndexPath *> *maintainIndexPaths  = ASSetByFlatMapping(maintainElements,  ASCollectionElement *element, [map indexPathForElementIfCell:element]);
 
   // Prioritize the order in which we visit each.  Visible nodes should be updated first so they are enqueued on
   // the network or display queues before preloading (offscreen) nodes are enqueued.
@@ -311,12 +322,14 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   // This means that during iteration, we will first visit visible, then display, then preload nodes.
   [allIndexPaths unionSet:displayIndexPaths];
   [allIndexPaths unionSet:preloadIndexPaths];
-  
+  [allIndexPaths unionSet:maintainIndexPaths];
   // Add anything we had applied interfaceState to in the last update, but is no longer in range, so we can clear any
   // range flags it still has enabled.  Most of the time, all but a few elements are equal; a large programmatic
   // scroll or major main thread stall could cause entirely disjoint sets.  In either case we must visit all.
   // Calling "-set" on NSMutableOrderedSet just references the underlying mutable data store, so we must copy it.
+
   NSSet<NSIndexPath *> *allCurrentIndexPaths = [[allIndexPaths set] copy];
+
   [allIndexPaths unionSet:_allPreviousIndexPaths];
   _allPreviousIndexPaths = allCurrentIndexPaths;
   
@@ -324,7 +337,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
   _preserveCurrentRangeMode = NO;
   
   if (!_rangeIsValid) {
-    [allIndexPaths addObjectsFromArray:map.itemIndexPaths];
+      [allIndexPaths addObjectsFromArray:map.itemIndexPaths];
   }
   
 #if ASRangeControllerLoggingEnabled
@@ -333,67 +346,102 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
 #endif
 
   for (NSIndexPath *indexPath in allIndexPaths) {
-    // Before a node / indexPath is exposed to ASRangeController, ASDataController should have already measured it.
-    // For consistency, make sure each node knows that it should measure itself if something changes.
-    ASInterfaceState interfaceState = ASInterfaceStateMeasureLayout;
-    
-    if (ASInterfaceStateIncludesVisible(selfInterfaceState)) {
-      if ([visibleIndexPaths containsObject:indexPath]) {
-        interfaceState |= (ASInterfaceStateVisible | ASInterfaceStateDisplay | ASInterfaceStatePreload);
-      } else {
-        if ([preloadIndexPaths containsObject:indexPath]) {
-          interfaceState |= ASInterfaceStatePreload;
-        }
-        if ([displayIndexPaths containsObject:indexPath]) {
-          interfaceState |= ASInterfaceStateDisplay;
-        }
-      }
-    } else {
-      // If selfInterfaceState isn't visible, then visibleIndexPaths represents what /will/ be immediately visible at the
-      // instant we come onscreen.  So, preload and display all of those things, but don't waste resources preloading yet.
-      // We handle this as a separate case to minimize set operations for offscreen preloading, including containsObject:.
+      ASInterfaceState interfaceState = ASInterfaceStateMeasureLayout;    // mới vô tạo state == MeasureLayout == 1
+      ASCollectionElement *element = [map elementForItemAtIndexPath:indexPath];
       
-      if ([allCurrentIndexPaths containsObject:indexPath]) {
-        // DO NOT set Visible: even though these elements are in the visible range / "viewport",
-        // our overall container object is itself not visible yet.  The moment it becomes visible, we will run the condition above
-        
-        // Set Layout, Preload
-        interfaceState |= ASInterfaceStatePreload;
-        
-        if (rangeMode != ASLayoutRangeModeLowMemory) {
-          // Add Display.
-          // We might be looking at an indexPath that was previously in-range, but now we need to clear it.
-          // In that case we'll just set it back to MeasureLayout.  Only set Display | Preload if in allCurrentIndexPaths.
-          interfaceState |= ASInterfaceStateDisplay;
-        }
-      }
-    }
-
-    ASCellNode *node = [map elementForItemAtIndexPath:indexPath].nodeIfAllocated;
-    if (node != nil) {
-      ASDisplayNodeAssert(node.hierarchyState & ASHierarchyStateRangeManaged, @"All nodes reaching this point should be range-managed, or interfaceState may be incorrectly reset.");
-      if (ASInterfaceStateIncludesVisible(interfaceState)) {
-        [newVisibleNodes addObject:node];
-      }
-      // Skip the many method calls of the recursive operation if the top level cell node already has the right interfaceState.
-      if (node.pendingInterfaceState != interfaceState) {
-#if ASRangeControllerLoggingEnabled
-        [modifiedIndexPaths addObject:indexPath];
-#endif
-
-        BOOL nodeShouldScheduleDisplay = [node shouldScheduleDisplayWithNewInterfaceState:interfaceState];
-        [node recursivelySetInterfaceState:interfaceState];
-
-        if (nodeShouldScheduleDisplay) {
-          [self registerForNodeDisplayNotificationsForInterfaceStateIfNeeded:selfInterfaceState];
-          if (_didRegisterForNodeDisplayNotifications) {
-            _pendingDisplayNodesTimestamp = CACurrentMediaTime();
+      // Step 1: calculate InterfaceState for Node/Cell:
+      if (ASInterfaceStateIncludesVisible(selfInterfaceState)) {
+          if ([visibleIndexPaths containsObject:indexPath]) {
+              interfaceState |= (ASInterfaceStateVisible | ASInterfaceStateDisplay | ASInterfaceStatePreload | ASInterfaceStateMaintain);
+          } else {
+              if ([maintainIndexPaths containsObject:indexPath]) {
+                  interfaceState |= ASInterfaceStateMaintain;
+              }
+              if ([preloadIndexPaths containsObject:indexPath]) {
+                  interfaceState |= ASInterfaceStatePreload;
+              }
+              if ([displayIndexPaths containsObject:indexPath]) {
+                  interfaceState |= ASInterfaceStateDisplay;
+              }
           }
-        }
+          
+      } else {
+          
+          // If selfInterfaceState isn't visible, then visibleIndexPaths represents what /will/ be immediately visible at the
+          // instant we come onscreen.  So, preload and display all of those things, but don't waste resources preloading yet.
+          // We handle this as a separate case to minimize set operations for offscreen preloading, including containsObject:.
+          
+          if ([allCurrentIndexPaths containsObject:indexPath]) {
+              // DO NOT set Visible: even though these elements are in the visible range / "viewport",
+              // our overall container object is itself not visible yet.  The moment it becomes visible, we will run the condition above
+              
+              // Set Layout, Preload
+              interfaceState |= ASInterfaceStatePreload;
+              
+              if (rangeMode != ASLayoutRangeModeLowMemory) {
+                  // Add Display.
+                  // We might be looking at an indexPath that was previously in-range, but now we need to clear it.
+                  // In that case we'll just set it back to MeasureLayout.  Only set Display | Preload if in allCurrentIndexPaths.
+                  interfaceState |= ASInterfaceStateDisplay;
+              }
+          }
       }
-    }
-  }
+      
+      // Step 2: notify new interfaceState of node:
+      __block ASCellNode *node = element.nodeIfAllocated;
+      
+      // If this node is out of managed ranges (Maintain, Preload, Display, Visible)
+      if (interfaceState == 1) {
+          [element setNode:nil];
+          continue;
+      }
+      
+      // if node is in managed ranges, but nil:
+      if (!node) {
+          dispatch_async(queue, ^{
+              // recreate node.
+              node = element.node;
+              ASSizeRange sizeRange = element.constrainedSize;          // ở đâu ra nhỉ?
+              
+              if (ASSizeRangeHasSignificantArea(sizeRange)) {
+                  ASDisplayNodeAssert(ASSizeRangeHasSignificantArea(sizeRange), @"Attempt to layout cell node with invalid size range %@", NSStringFromASSizeRange(sizeRange));
+                  
+                  CGRect frame = CGRectZero;
+                  ASLayout *layout = [node layoutThatFits:sizeRange];
+                  frame.size = layout.size;
+                  node.frame = frame;
+              }
+          });
+      }
 
+      if (node) {
+          ASDisplayNodeAssert(node.hierarchyState & ASHierarchyStateRangeManaged, @"All nodes reaching this point should be range-managed, or interfaceState may be incorrectly reset.");
+          
+          if (ASInterfaceStateIncludesVisible(interfaceState)) {
+              [newVisibleNodes addObject:node];   // add node 0,0 vào.
+          }
+          
+          // Skip the many method calls of the recursive operation if the top level cell node already has the right interfaceState.
+          if (node.pendingInterfaceState != interfaceState) {
+              
+#if ASRangeControllerLoggingEnabled
+              [modifiedIndexPaths addObject:indexPath];
+#endif
+              
+              BOOL nodeShouldScheduleDisplay = [node shouldScheduleDisplayWithNewInterfaceState:interfaceState];
+              
+              [node recursivelySetInterfaceState:interfaceState]; // update InterfaceState
+              
+              if (nodeShouldScheduleDisplay) {
+                  [self registerForNodeDisplayNotificationsForInterfaceStateIfNeeded:selfInterfaceState];
+                  if (_didRegisterForNodeDisplayNotifications) {
+                      _pendingDisplayNodesTimestamp = CACurrentMediaTime();
+                  }
+              }
+          }
+      }
+  }
+  
   [self _setVisibleNodes:newVisibleNodes];
   
   // TODO: This code is for debugging only, but would be great to clean up with a delegate method implementation.
@@ -514,6 +562,7 @@ static UIApplicationState __ApplicationState = UIApplicationStateActive;
     [self _setVisibleNodes:nil];
   }
   _rangeIsValid = NO;
+    
   [_delegate rangeController:self updateWithChangeSet:changeSet updates:updates];
 }
 

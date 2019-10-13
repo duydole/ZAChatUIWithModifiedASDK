@@ -48,6 +48,12 @@ ASDISPLAYNODE_INLINE BOOL ASInterfaceStateIncludesPreload(ASInterfaceState inter
   return ((interfaceState & ASInterfaceStatePreload) == ASInterfaceStatePreload);
 }
 
+// duydl:
+ASDISPLAYNODE_INLINE BOOL ASInterfaceStateIncludesMaintain(ASInterfaceState interfaceState)
+{
+    return ((interfaceState & ASInterfaceStateMaintain) == ASInterfaceStateMaintain);
+}
+
 ASDISPLAYNODE_INLINE BOOL ASInterfaceStateIncludesMeasureLayout(ASInterfaceState interfaceState)
 {
   return ((interfaceState & ASInterfaceStateMeasureLayout) == ASInterfaceStateMeasureLayout);

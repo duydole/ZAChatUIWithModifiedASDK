@@ -3206,6 +3206,26 @@ ASDISPLAYNODE_INLINE BOOL subtreeIsRasterized(ASDisplayNode *node) {
   }];
 }
 
+// duydl:
+- (void)didEnterMaintainState
+{
+    ASDisplayNodeAssertMainThread();
+    DISABLED_ASAssertUnlocked(__instanceLock__);
+    [self enumerateInterfaceStateDelegates:^(id<ASInterfaceStateDelegate> del) {
+        [del didEnterMaintainState];
+    }];
+}
+
+- (void)didExitMaintainState
+{
+    // subclass override
+    ASDisplayNodeAssertMainThread();
+    DISABLED_ASAssertUnlocked(__instanceLock__);
+    [self enumerateInterfaceStateDelegates:^(id<ASInterfaceStateDelegate> del) {
+        [del didExitMaintainState];
+    }];
+}
+
 - (BOOL)isInPreloadState
 {
   ASDN::MutexLocker l(__instanceLock__);

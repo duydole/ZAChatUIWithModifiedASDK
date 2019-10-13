@@ -95,12 +95,15 @@ CGRect CGRectExpandToRangeWithScrollableDirections(CGRect rect, ASRangeTuningPar
     .leadingBufferScreenfuls = 1.0,
     .trailingBufferScreenfuls = 0.5
   };
-
   tuningParameters[ASLayoutRangeModeFull][ASLayoutRangeTypePreload] = {
     .leadingBufferScreenfuls = 2.5,
     .trailingBufferScreenfuls = 1.5
   };
-
+  tuningParameters[ASLayoutRangeModeFull][ASLayoutRangeTypeMaintain] = {
+        .leadingBufferScreenfuls = 10.0, // bot
+        .trailingBufferScreenfuls = 2.5 // top
+    };
+    
   tuningParameters[ASLayoutRangeModeMinimum][ASLayoutRangeTypeDisplay] = {
     .leadingBufferScreenfuls = 0.25,
     .trailingBufferScreenfuls = 0.25
@@ -109,7 +112,11 @@ CGRect CGRectExpandToRangeWithScrollableDirections(CGRect rect, ASRangeTuningPar
     .leadingBufferScreenfuls = 0.5,
     .trailingBufferScreenfuls = 0.25
   };
-
+  tuningParameters[ASLayoutRangeModeMinimum][ASLayoutRangeTypeMaintain] = {
+        .leadingBufferScreenfuls = 2.0,
+        .trailingBufferScreenfuls = 2.0
+    };
+    
   tuningParameters[ASLayoutRangeModeVisibleOnly][ASLayoutRangeTypeDisplay] = {
     .leadingBufferScreenfuls = 0,
     .trailingBufferScreenfuls = 0
@@ -118,7 +125,11 @@ CGRect CGRectExpandToRangeWithScrollableDirections(CGRect rect, ASRangeTuningPar
     .leadingBufferScreenfuls = 0,
     .trailingBufferScreenfuls = 0
   };
-
+  tuningParameters[ASLayoutRangeModeVisibleOnly][ASLayoutRangeTypeMaintain] = {
+        .leadingBufferScreenfuls = 0,
+        .trailingBufferScreenfuls = 0
+    };
+    
   // The Low Memory range mode has special handling. Because a zero range still includes the visible area / bounds,
   // in order to implement the behavior of releasing all graphics memory (backing stores), ASRangeController must check
   // for this range mode and use an empty set for displayIndexPaths rather than querying the ASLayoutController for the indexPaths.
@@ -130,6 +141,11 @@ CGRect CGRectExpandToRangeWithScrollableDirections(CGRect rect, ASRangeTuningPar
     .leadingBufferScreenfuls = 0,
     .trailingBufferScreenfuls = 0
   };
+  tuningParameters[ASLayoutRangeModeLowMemory][ASLayoutRangeTypeMaintain] = {
+    .leadingBufferScreenfuls = 0,
+    .trailingBufferScreenfuls = 0
+};
+    
   return tuningParameters;
 }
 
@@ -180,6 +196,11 @@ CGRect CGRectExpandToRangeWithScrollableDirections(CGRect rect, ASRangeTuningPar
 - (void)allElementsForScrolling:(ASScrollDirection)scrollDirection rangeMode:(ASLayoutRangeMode)rangeMode displaySet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable *)displaySet preloadSet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable *)preloadSet map:(ASElementMap *)map
 {
   ASDisplayNodeAssertNotSupported();
+}
+
+- (void)allElementsForScrolling:(ASScrollDirection)scrollDirection rangeMode:(ASLayoutRangeMode)rangeMode displaySet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable * _Nullable)displaySet preloadSet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable * _Nullable)preloadSet maintainSet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable * _Nullable)maintainSet map:(nonnull ASElementMap *)map
+{
+    ASDisplayNodeAssertNotSupported();
 }
 
 @end

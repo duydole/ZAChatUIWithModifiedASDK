@@ -13,8 +13,6 @@
 
 @interface ASCollectionElement ()
 
-/// Required node block used to allocate a cell node. Nil after the first execution.
-@property (nonatomic) ASCellNodeBlock nodeBlock;
 
 @end
 
@@ -46,18 +44,17 @@
 - (ASCellNode *)node
 {
   std::lock_guard<std::mutex> l(_lock);
-  if (_nodeBlock != nil) {
-    ASCellNode *node = _nodeBlock();
-    _nodeBlock = nil;
-    if (node == nil) {
-      ASDisplayNodeFailAssert(@"Node block returned nil node!");
-      node = [[ASCellNode alloc] init];
-    }
-    node.owningNode = _owningNode;
-    node.collectionElement = self;
-    ASTraitCollectionPropagateDown(node, _traitCollection);
-    node.nodeModel = _nodeModel;
-    _node = node;
+  if (!_node) {
+      ASCellNode *node = _nodeBlock();
+      if (node == nil) {
+          ASDisplayNodeFailAssert(@"Node block returned nil node!");
+          node = [[ASCellNode alloc] init];
+      }
+      node.owningNode = _owningNode;
+      node.collectionElement = self;
+      ASTraitCollectionPropagateDown(node, _traitCollection);
+      node.nodeModel = _nodeModel;
+      _node = node;
   }
   return _node;
 }

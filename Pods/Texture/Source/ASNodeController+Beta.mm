@@ -88,6 +88,10 @@
 
 - (void)hierarchyDisplayDidFinish {}
 
+// duydl:
+- (void)didEnterMaintainState {}
+- (void)didExitMaintainState {}
+
 #pragma mark NSLocking
 
 - (void)lock

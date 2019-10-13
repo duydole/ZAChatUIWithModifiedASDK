@@ -932,6 +932,15 @@ typedef void (^ASDataControllerSynchronizationBlock)();
   ASDisplayNodeAssertMainThread();
   if (_initialReloadDataHasBeenCalled) {
     [self waitUntilAllUpdatesAreProcessed];
+      // dld:
+      NSArray<ASCollectionElement*> *items = self.visibleMap.itemElements;
+      for (ASCollectionElement *item in items) {
+          item.nodeBlock = nil;
+      }
+      NSArray<ASCollectionElement*> *items2 = self.pendingMap.itemElements;
+      for (ASCollectionElement *item in items2) {
+          item.nodeBlock = nil;
+      }
     self.visibleMap = self.pendingMap = [[ASElementMap alloc] init];
   }
 }

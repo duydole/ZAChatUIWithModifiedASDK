@@ -35,12 +35,16 @@ AS_SUBCLASSING_RESTRICTED
  * @return The node, running the node block if necessary. The node block will be discarded
  * after the first time it is run.
  */
-@property (readonly) ASCellNode *node;
+@property (nonatomic, nullable) ASCellNode *node;
 
 /**
  * @return The node, if the node block has been run already.
  */
 @property (nullable, readonly) ASCellNode *nodeIfAllocated;
+
+/// Required node block used to allocate a cell node. Nil after the first execution.
+/// duydl:
+@property (nonatomic, nullable) ASCellNodeBlock nodeBlock;
 
 @end
 

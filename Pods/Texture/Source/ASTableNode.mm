@@ -134,6 +134,7 @@
 - (void)dealloc
 {
   if (self.nodeLoaded) {
+      [self.view.dataController clearData];
     __weak UIView *view = self.view;
     ASPerformBlockOnMainThread(^{
       ASDisplayNodeCAssertNil(view.superview, @"Node's view should be removed from hierarchy.");

@@ -51,4 +51,21 @@
   return;
 }
 
+- (void)allElementsForScrolling:(ASScrollDirection)scrollDirection
+                      rangeMode:(ASLayoutRangeMode)rangeMode
+                     displaySet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable *)displaySet
+                     preloadSet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable *)preloadSet
+                    maintainSet:(NSHashTable<ASCollectionElement *> *__autoreleasing  _Nullable *)maintainSet
+                            map:(ASElementMap *)map {
+    if (displaySet == NULL || preloadSet == NULL) {
+        return;
+    }
+    
+    *displaySet     = [self elementsForScrolling:scrollDirection rangeMode:rangeMode rangeType:ASLayoutRangeTypeDisplay map:map];
+    *preloadSet     = [self elementsForScrolling:scrollDirection rangeMode:rangeMode rangeType:ASLayoutRangeTypePreload map:map];
+    *maintainSet    = [self elementsForScrolling:scrollDirection rangeMode:rangeMode rangeType:ASLayoutRangeTypeMaintain map:map];  // duydl
+    
+    return;
+}
+
 @end
